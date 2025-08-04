@@ -1,0 +1,44 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+.main-content {
+    margin-left: 240px;
+    padding: 20px;
+}
+.sidebar {
+    float: left;
+    width: 200px;
+    background: #f0f0f0;
+    padding: 10px;
+    margin-top: 20px;
+    margin-left: 10px;
+    border-radius: 8px;
+    position: fixed;
+    height: 80%;
+}
+.notification {
+    background: #ffeeba;
+    color: #856404;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 15px 0 15px 240px;
+    width: calc(100% - 260px);
+}
+.message {
+    margin-bottom: 10px;
+    padding: 6px;
+    border-bottom: 1px solid #eee;
+}
+.like-btn {
+    background: #e7e7e7;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+    padding: 2px 8px;
+}
+.like-btn:hover {
+    background: #d4edda;
+}

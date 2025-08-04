@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Room - CTF Social</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            background: #f7f7f7;
+        }
+        .top-bar {
+            width: 100%;
+            background: #fff;
+            box-shadow: 0 2px 8px #e0e0e0;
+            padding: 12px 0 12px 0;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+        .top-bar .profile-link, .top-bar .logout-link {
+            margin: 0 18px;
+            color: #007bff;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 16px;
+            padding: 7px 16px;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .top-bar .profile-link:hover, .top-bar .logout-link:hover {
+            background: #e9ecef;
+            text-decoration: underline;
+        }
+        .chat-container {
+            width: 700px;
+            margin: 90px auto 0 auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px #bbb;
+            padding: 35px 40px 30px 40px; 
+            min-height: 500px; 
+            margin: 90px auto 0 auto;
+        }
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .chat-header h2 {
+            color: #007bff;
+            margin-bottom: 0;
+        }
+        .chat-form {
+            display: flex;
+            margin-bottom: 18px;
+        }
+        .chat-form input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border-radius: 6px 0 0 6px;
+            border: 1px solid #ccc;
+            font-size: 15px;
+        }
+        .chat-form button {
+            padding: 10px 22px;
+            border-radius: 0 6px 6px 0;
+            border: none;
+            background: #007bff;
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        .chat-form button:hover {
+            background: #0056b3;
+        }
+        .messages {
+            margin-bottom: 25px;
+            max-height: 320px;
+            overflow-y: auto;
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 1px 4px #eee;
+        }
+        .message {
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #ececec;
+        }
+        .message:last-child {
+            border-bottom: none;
+        }
+        .message strong a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .message strong a:hover {
+            text-decoration: underline;
+        }
+        .like-btn {
+            background: #e7e7e7;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+            padding: 2px 8px;
+        }
+        .like-btn:hover {
+            background: #d4edda;
+        }
+        .sidebar {
+            float: right;
+            width: 220px;
+            background: #f0f0f0;
+            padding: 18px 12px;
+            margin-top: 90px;
+            margin-left: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 4px #eee;
+            min-height: 350px;
+        }
+        .sidebar h3 {
+            margin-top: 0;
+        }
+        .sidebar ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .sidebar li {
+            margin-bottom: 8px;
+        }
+        .dm-sidebar {
+            position: fixed;
+            left: 0;
+            top: 60px;
+            width: 180px;
+            background: #f0f0f0;
+            padding: 18px 10px;
+            border-radius: 0 10px 10px 0;
+            box-shadow: 2px 0 8px #eee;
+            min-height: 400px;
+            z-index: 5;
+        }
+        .dm-sidebar h3 {
+            margin-top: 0;
+            font-size: 17px;
+            color: #007bff;
+        }
+        .dm-sidebar ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .dm-sidebar li {
+            margin-bottom: 10px;
+        }
+        .dm-sidebar a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .dm-sidebar a:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 1000px) {
+            .chat-container {
+                width: 98%;
+                padding: 18px 5px 18px 5px;
+            }
+            .sidebar, .dm-sidebar {
+                display: none;
+            }
+        }
+        @media (max-width: 900px) {
+            .dm-sidebar { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <a class="profile-link" href="{{ url_for('myprofile') }}">Edit My Profile</a>
+        <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
+    </div>
+    <div class="dm-sidebar">
+        <h3>Private Chats</h3>
+        <ul>
+            {% for contact in dm_contacts %}
+                <li>
+                    <a href="{{ url_for('direct_message', friend=contact) }}">{{ contact }}</a>
+                </li>
+            {% else %}
+                <li style="color:#888;">No private chats yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>Chat Room</h2>
+        </div>
+
+        <form class="chat-form" method="post">
+            <input type="text" name="message" placeholder="Type your message..." required>
+            <button type="submit">Send</button>
+        </form>
+        <div class="messages" id="messages-container">
+            {% for message in messages %}
+                <div class="message">
+                    <strong>
+                        <a href="{{ url_for('profile', username=message[1]) }}">{{ message[1] }}</a>
+                    </strong>: {{ message[2] }}
+                    <form action="{{ url_for('like_message', message_id=message[0]) }}" method="post" style="display:inline;">
+                        <button class="like-btn" type="submit">👍 Like</button>
+                    </form>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="sidebar">
+        <h3>Your Friends</h3>
+        <ul>
+            {% for friend in friends %}
+                <li><a href="{{ url_for('profile', username=friend) }}">{{ friend }}</a></li>
+            {% else %}
+                <li>No friends yet.</li>
+            {% endfor %}
+        </ul>
+        <h3>Trending</h3>
+        <ul>
+            {% for msg in trending %}
+                <li>
+                    <strong>
+                        <a href="{{ url_for('profile', username=msg[1]) }}">{{ msg[1] }}</a>
+                    </strong>: {{ msg[2] }}<br>
+                    <span style="font-size:12px;color:#888;">Likes: {{ msg[3] }}</span>
+                </li>
+            {% else %}
+                <li>No trending posts yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <script>
+function renderMessages(messages) {
+    const container = document.getElementById('messages-container');
+    container.innerHTML = '';
+    messages.forEach(function(msg) {
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `<strong>
+            <a href="/profile/${msg.user}">${msg.user}</a>
+        </strong>: ${msg.message}
+        <form action="/like/${msg.id}" method="post" style="display:inline;">
+            <button class="like-btn" type="submit">👍 Like</button>
+        </form>`;
+        container.appendChild(div);
+    });
+}
+
+// Poll for new messages every 2 seconds
+setInterval(function() {
+    fetch('/messages')
+        .then(response => response.json())
+        .then(data => renderMessages(data));
+}, 2000);
+</script>
+</body>
+</html>

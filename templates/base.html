@@ -1,0 +1,17 @@
+
+<!doctype html>
+<html>
+<head>
+    <title>CTF WebApp</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>CTF Challenge</h1>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul class=flashes>{% for message in messages %}<li>{{ message }}</li>{% endfor %}</ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</body>
+</html>
