@@ -4,77 +4,56 @@ import sqlite3
 from flask import Flask, request, redirect, render_template, session, url_for, flash, send_from_directory, make_response, jsonify
 from werkzeug.utils import secure_filename
 
-# --------------------
-# Configuration
-# --------------------
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2MB max
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+if not os.path.exists('uploads'):
+    os.makedirs('uploads')
 
 # --------------------
-# Utilities
+# Database initialization
 # --------------------
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def check_magic_bytes(file):
-    file.seek(0)
-    magic_bytes = file.read(8)
-    file.seek(0)
-    return magic_bytes.startswith(b'\x89PNG\r\n\x1a\n') or magic_bytes.startswith(b'\xFF\xD8\xFF')
-
-def waf_check(file):
-    content = file.read()
-    file.seek(0)
-    return b'<?php' in content
-
 def init_db():
     with sqlite3.connect("database.db") as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                username TEXT,
+                password TEXT,
+                banned INTEGER DEFAULT 0,
+                bio TEXT DEFAULT '',
+                profile_photo TEXT DEFAULT NULL
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY,
+                user TEXT,
+                message TEXT
+            )
+        """)
+        con.execute("CREATE TABLE IF NOT EXISTS friends (user TEXT, friend TEXT)")
+        con.execute("CREATE TABLE IF NOT EXISTS likes (message_id INTEGER, username TEXT)")
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS direct_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender TEXT,
+                recipient TEXT,
+                message TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Ensure admin exists
         cur = con.cursor()
-        # Users
-        cur.execute("""CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
-            username TEXT UNIQUE,
-            password TEXT,
-            banned INTEGER DEFAULT 0,
-            bio TEXT DEFAULT '',
-            profile_photo TEXT DEFAULT NULL
-        )""")
-        # Messages
-        cur.execute("""CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY,
-            user TEXT,
-            message TEXT
-        )""")
-        # Likes
-        cur.execute("""CREATE TABLE IF NOT EXISTS likes (
-            message_id INTEGER,
-            username TEXT
-        )""")
-        # Friends
-        cur.execute("""CREATE TABLE IF NOT EXISTS friends (
-            user TEXT,
-            friend TEXT
-        )""")
-        # Direct messages
-        cur.execute("""CREATE TABLE IF NOT EXISTS direct_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender TEXT,
-            recipient TEXT,
-            message TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-        # Admin account
         cur.execute("SELECT * FROM users WHERE username='admin'")
         if not cur.fetchone():
-            cur.execute("INSERT INTO users (username, password, banned, bio) VALUES (?, ?, 0, ?)",
-                        ('admin', 'dolphin1234', 'I am the admin.'))
-        con.commit()
+            cur.execute("INSERT INTO users (username, password, banned, bio) VALUES ('admin','dolphin1234',0,'I am the admin.')")
+            con.commit()
 
+# --------------------
+# Helper functions
+# --------------------
 def get_dm_contacts(username):
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
@@ -97,18 +76,18 @@ def get_dm_contacts(username):
 def index():
     return redirect(url_for('login'))
 
-# --- Registration ---
+# --- Register ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         uname = request.form['username']
         pw = request.form['password']
         if uname.lower() == 'admin':
-            flash("You cannot register as admin.")
+            flash("Cannot register as admin.")
             return redirect(url_for('register'))
         with sqlite3.connect("database.db") as con:
             cur = con.cursor()
-            cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (uname, pw))
+            cur.execute("INSERT INTO users (username, password) VALUES (?,?)", (uname, pw))
             con.commit()
         flash("Registration successful!")
         return redirect(url_for('login'))
@@ -124,55 +103,63 @@ def login():
         pw = request.form['password']
         with sqlite3.connect("database.db") as con:
             cur = con.cursor()
-            cur.execute("SELECT * FROM users WHERE username=? AND password=?", (uname, pw))
-            user = cur.fetchone()
-            if user:
-                if user[3]:  # banned
+            cur.execute("SELECT username,password,banned FROM users WHERE username=? AND password=?", (uname, pw))
+            row = cur.fetchone()
+            if row:
+                if row[2]:
                     banned_msg = "Your account is banned."
                     return render_template('login.html', error=error, banned_msg=banned_msg)
                 session['username'] = uname
                 resp = make_response(redirect(url_for('chat')))
                 resp.set_cookie('ctf_username', uname)
                 return resp
-            else:
-                error = "Invalid credentials."
+            error = "Invalid credentials."
     return render_template('login.html', error=error, banned_msg=banned_msg)
 
+# --- Logout ---
 @app.route('/logout')
 def logout():
     session.pop('username', None)
     return redirect(url_for('index'))
 
-# --- File Upload ---
+# --- Vulnerable File Upload ---
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():
     if 'username' not in session:
         return redirect(url_for('login'))
     if request.method == 'POST':
         file = request.files['file']
-        if file and allowed_file(file.filename):
-            if waf_check(file):
+        if file:
+            # Weak WAF only blocks <?php
+            file_content = file.read()
+            file.seek(0)
+            if b'<?php' in file_content:
                 flash('Malicious file detected.')
                 return redirect(url_for('myprofile'))
-            if not check_magic_bytes(file):
-                flash('Invalid file magic bytes.')
-                return redirect(url_for('myprofile'))
-            filename = secure_filename(file.filename)
+
+            # Save file directly, no restrictions
             user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
             os.makedirs(user_upload_dir, exist_ok=True)
+            filename = secure_filename(file.filename)
             filepath = os.path.join(user_upload_dir, filename)
             file.save(filepath)
             flash('File uploaded successfully!')
             return redirect(url_for('myprofile'))
         else:
-            flash('Invalid file.')
+            flash('No file selected.')
     return render_template('upload.html')
 
-# --- Profile Management ---
+@app.route('/uploads/<username>/<filename>')
+def uploaded_file(username, filename):
+    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
+    return send_from_directory(user_upload_dir, filename)
+
+# --- My Profile ---
 @app.route('/myprofile', methods=['GET', 'POST'])
 def myprofile():
     if 'username' not in session:
         return redirect(url_for('login'))
+
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
     os.makedirs(user_upload_dir, exist_ok=True)
 
@@ -181,10 +168,13 @@ def myprofile():
         file = request.files.get('profile_photo')
         photo_filename = None
 
-        if file and allowed_file(file.filename):
-            if waf_check(file) or not check_magic_bytes(file):
-                flash('Invalid or malicious file.')
+        if file:
+            file_content = file.read()
+            file.seek(0)
+            if b'<?php' in file_content:
+                flash('Malicious file detected.')
                 return redirect(url_for('myprofile'))
+
             photo_filename = secure_filename(file.filename)
             photo_filepath = os.path.join(user_upload_dir, photo_filename)
             file.save(photo_filepath)
@@ -192,9 +182,11 @@ def myprofile():
         with sqlite3.connect("database.db") as con:
             cur = con.cursor()
             if photo_filename:
-                cur.execute("UPDATE users SET bio=?, profile_photo=? WHERE username=?", (bio, photo_filename, session['username']))
+                cur.execute("UPDATE users SET bio=?, profile_photo=? WHERE username=?",
+                            (bio, photo_filename, session['username']))
             else:
-                cur.execute("UPDATE users SET bio=? WHERE username=?", (bio, session['username']))
+                cur.execute("UPDATE users SET bio=? WHERE username=?",
+                            (bio, session['username']))
             con.commit()
         flash("Profile updated!")
         return redirect(url_for('myprofile'))
@@ -205,13 +197,8 @@ def myprofile():
         row = cur.fetchone()
         bio = row[0]
         profile_photo = row[1] if len(row) > 1 else None
-    return render_template('myprofile.html', bio=bio, profile_photo=profile_photo)
 
-# --- Serve Uploads ---
-@app.route('/uploads/<username>/<filename>')
-def uploaded_file(username, filename):
-    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
-    return send_from_directory(user_upload_dir, filename)
+    return render_template('myprofile.html', bio=bio, profile_photo=photo_photo)
 
 # --- Chat ---
 @app.route('/chat', methods=['GET', 'POST'])
@@ -224,102 +211,13 @@ def chat():
         cur = con.cursor()
         if request.method == 'POST':
             msg = request.form['message']
-            cur.execute("INSERT INTO messages (user, message) VALUES (?, ?)", (session['username'], msg))
+            cur.execute("INSERT INTO messages (user,message) VALUES (?,?)", (session['username'], msg))
             con.commit()
-        cur.execute("SELECT id, user, message FROM messages ORDER BY id DESC LIMIT 10")
+        cur.execute("SELECT id,user,message FROM messages ORDER BY id DESC LIMIT 10")
         messages = cur.fetchall()
         cur.execute("SELECT friend FROM friends WHERE user=?", (session['username'],))
         friends = [row[0] for row in cur.fetchall()]
-        cur.execute("""SELECT messages.id, messages.user, messages.message, COUNT(likes.message_id) as like_count
-                       FROM messages
-                       LEFT JOIN likes ON messages.id = likes.message_id
-                       GROUP BY messages.id
-                       ORDER BY like_count DESC, messages.id DESC
-                       LIMIT 5""")
-        trending = cur.fetchall()
-    return render_template('chat.html', messages=messages, username_cookie=username_cookie, friends=friends, trending=trending, dm_contacts=dm_contacts)
-
-# --- Likes ---
-@app.route('/like/<int:message_id>', methods=['POST'])
-def like_message(message_id):
-    if 'username' not in session:
-        return redirect(url_for('login'))
-    with sqlite3.connect("database.db") as con:
-        cur = con.cursor()
-        cur.execute("SELECT * FROM likes WHERE message_id=? AND username=?", (message_id, session['username']))
-        if not cur.fetchone():
-            cur.execute("INSERT INTO likes (message_id, username) VALUES (?, ?)", (message_id, session['username']))
-            con.commit()
-    return redirect(url_for('chat'))
-
-# --- Friends ---
-@app.route('/add_friend/<username>', methods=['POST'])
-def add_friend(username):
-    if 'username' not in session or session['username'] == username:
-        return redirect(url_for('chat'))
-    with sqlite3.connect("database.db") as con:
-        cur = con.cursor()
-        cur.execute("SELECT * FROM friends WHERE user=? AND friend=?", (session['username'], username))
-        if not cur.fetchone():
-            cur.execute("INSERT INTO friends (user, friend) VALUES (?, ?)", (session['username'], username))
-            con.commit()
-    flash(f"You are now friends with {username}!")
-    return redirect(url_for('profile', username=username))
-
-@app.route('/remove_friend/<username>', methods=['POST'])
-def remove_friend(username):
-    if 'username' not in session or session['username'] == username:
-        return redirect(url_for('chat'))
-    with sqlite3.connect("database.db") as con:
-        cur = con.cursor()
-        cur.execute("DELETE FROM friends WHERE user=? AND friend=?", (session['username'], username))
-        con.commit()
-    flash(f"You are no longer friends with {username}.")
-    return redirect(url_for('profile', username=username))
-
-# --- Profile view ---
-@app.route('/profile/<username>')
-def profile(username):
-    is_friend = False
-    if 'username' in session and session['username'] != username:
-        with sqlite3.connect("database.db") as con:
-            cur = con.cursor()
-            cur.execute("SELECT * FROM friends WHERE user=? AND friend=?", (session['username'], username))
-            if cur.fetchone():
-                is_friend = True
-    with sqlite3.connect("database.db") as con:
-        cur = con.cursor()
-        cur.execute("SELECT bio, banned, profile_photo FROM users WHERE username=?", (username,))
-        row = cur.fetchone()
-        if not row:
-            flash("User not found.")
-            return redirect(url_for('chat'))
-        bio, banned, profile_photo = row
-    return render_template('profile.html', username=username, bio=bio, banned=banned, is_friend=is_friend, profile_photo=profile_photo)
-
-# --- Direct messages ---
-@app.route('/dm/<friend>', methods=['GET', 'POST'])
-def direct_message(friend):
-    if 'username' not in session or session['username'] == friend:
-        return redirect(url_for('chat'))
-    dm_contacts = get_dm_contacts(session['username'])
-    with sqlite3.connect("database.db") as con:
-        cur = con.cursor()
-        cur.execute("SELECT * FROM friends WHERE user=? AND friend=?", (session['username'], friend))
-        if not cur.fetchone():
-            flash("You can only DM your friends.")
-            return redirect(url_for('profile', username=friend))
-        if request.method == 'POST':
-            msg = request.form['message']
-            cur.execute("INSERT INTO direct_messages (sender, recipient, message) VALUES (?, ?, ?)",
-                        (session['username'], friend, msg))
-            con.commit()
-        cur.execute("""SELECT sender, recipient, message, timestamp FROM direct_messages
-                       WHERE (sender=? AND recipient=?) OR (sender=? AND recipient=?)
-                       ORDER BY timestamp ASC""",
-                    (session['username'], friend, friend, session['username']))
-        messages = cur.fetchall()
-    return render_template('dm.html', friend=friend, messages=messages, dm_contacts=dm_contacts)
+    return render_template('chat.html', messages=messages, username_cookie=username_cookie, friends=friends, dm_contacts=dm_contacts)
 
 # --- Admin panel ---
 @app.route('/admin')
@@ -327,20 +225,20 @@ def admin():
     if 'username' not in session or session['username'] != 'admin':
         flash("You must be admin.")
         return redirect(url_for('login'))
-    search = request.args.get('search', '')
+    search = request.args.get('search','')
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
         if search:
-            cur.execute("SELECT username, banned FROM users WHERE username LIKE ?", ('%' + search + '%',))
+            cur.execute("SELECT username,banned FROM users WHERE username LIKE ?", ('%' + search + '%',))
         else:
-            cur.execute("SELECT username, banned FROM users")
+            cur.execute("SELECT username,banned FROM users")
         users = cur.fetchall()
     return render_template('admin.html', users=users, search=search)
 
 # --- Admin actions ---
 @app.route('/admin/ban/<username>')
 def admin_ban(username):
-    if 'username' not in session or session['username'] != 'admin' or username == 'admin':
+    if 'username' not in session or session['username'] != 'admin' or username=='admin':
         flash("Unauthorized.")
         return redirect(url_for('admin'))
     with sqlite3.connect("database.db") as con:
@@ -352,7 +250,7 @@ def admin_ban(username):
 
 @app.route('/admin/unban/<username>')
 def admin_unban(username):
-    if 'username' not in session or session['username'] != 'admin' or username == 'admin':
+    if 'username' not in session or session['username'] != 'admin' or username=='admin':
         flash("Unauthorized.")
         return redirect(url_for('admin'))
     with sqlite3.connect("database.db") as con:
@@ -364,7 +262,7 @@ def admin_unban(username):
 
 @app.route('/admin/reset/<username>')
 def admin_reset(username):
-    if 'username' not in session or session['username'] != 'admin' or username == 'admin':
+    if 'username' not in session or session['username'] != 'admin' or username=='admin':
         flash("Unauthorized.")
         return redirect(url_for('admin'))
     with sqlite3.connect("database.db") as con:
@@ -380,3 +278,4 @@ def admin_reset(username):
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=80, debug=True)
+
