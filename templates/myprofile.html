@@ -69,10 +69,12 @@
             <textarea name="bio" placeholder="Write something about yourself...">{{ bio }}</textarea><br>
             <label style="font-weight:bold;">Profile Photo:</label><br>
             <input type="file" name="profile_photo"><br>
+
             {% if profile_photo %}
-                <img src="{{ url_for('uploaded_file', filename=profile_photo) }}" alt="Profile Photo"><br>
+                <img src="{{ url_for('uploaded_file', username=session['username'], filename=profile_photo) }}" alt="Profile Photo"><br>
                 <span style="font-size:12px;color:#888;">Current Photo</span><br>
             {% endif %}
+
             <button type="submit">Save Changes</button>
         </form>
         <a class="back-link" href="{{ url_for('chat') }}">&#8592; Back to Chat</a>
