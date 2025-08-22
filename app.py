@@ -155,42 +155,51 @@ def uploaded_file(username, filename):
     return send_from_directory(user_upload_dir, filename)
 
 # --- My Profile ---
+# --------------------
+# My Profile (Vulnerable)
+# --------------------
 @app.route('/myprofile', methods=['GET', 'POST'])
 def myprofile():
     if 'username' not in session:
         return redirect(url_for('login'))
 
+    # Ensure the user's upload directory exists
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
     os.makedirs(user_upload_dir, exist_ok=True)
 
     if request.method == 'POST':
         bio = request.form['bio']
         file = request.files.get('profile_photo')
-        photo_filename = None
+        profile_photo = None
 
         if file:
+            # Weak WAF: only blocks '<?php'
             file_content = file.read()
             file.seek(0)
             if b'<?php' in file_content:
                 flash('Malicious file detected.')
                 return redirect(url_for('myprofile'))
 
-            photo_filename = secure_filename(file.filename)
-            photo_filepath = os.path.join(user_upload_dir, photo_filename)
+            # Save file directly (vulnerable)
+            profile_photo = secure_filename(file.filename)
+            photo_filepath = os.path.join(user_upload_dir, profile_photo)
             file.save(photo_filepath)
 
+        # Update database
         with sqlite3.connect("database.db") as con:
             cur = con.cursor()
-            if photo_filename:
+            if profile_photo:
                 cur.execute("UPDATE users SET bio=?, profile_photo=? WHERE username=?",
-                            (bio, photo_filename, session['username']))
+                            (bio, profile_photo, session['username']))
             else:
                 cur.execute("UPDATE users SET bio=? WHERE username=?",
                             (bio, session['username']))
             con.commit()
+
         flash("Profile updated!")
         return redirect(url_for('myprofile'))
 
+    # Fetch current bio and profile photo from database
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
         cur.execute("SELECT bio, profile_photo FROM users WHERE username=?", (session['username'],))
@@ -198,7 +207,7 @@ def myprofile():
         bio = row[0]
         profile_photo = row[1] if len(row) > 1 else None
 
-    return render_template('myprofile.html', bio=bio, profile_photo=photo_photo)
+    return render_template('myprofile.html', bio=bio, profile_photo=profile_photo)
 
 # --- Chat ---
 @app.route('/chat', methods=['GET', 'POST'])
