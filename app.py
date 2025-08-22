@@ -93,6 +93,12 @@ def register():
         return redirect(url_for('login'))
     return render_template('register.html')
 
+@app.route('/chat', methods=['GET', 'POST'])
+def chat():  # function name must match the endpoint used in url_for
+    # Your chat logic here
+    return render_template('chat.html')
+
+
 # --- Login ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
