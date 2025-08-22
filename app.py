@@ -163,44 +163,50 @@ def myprofile():
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
     os.makedirs(user_upload_dir, exist_ok=True)
 
-    if request.method == 'POST':
-        bio = request.form.get('bio', '')
-        file = request.files.get('profile_photo')
-        profile_photo = None
-
-        if file:
-            file_content = file.read()
-            file.seek(0)
-            if b'<?php' in file_content:
-                flash('Malicious file detected.')
-                return redirect(url_for('myprofile'))
-
-            profile_photo = secure_filename(file.filename)
-            filepath = os.path.join(user_upload_dir, profile_photo)
-            file.save(filepath)
-
-        with sqlite3.connect("database.db") as con:
-            cur = con.cursor()
-            if profile_photo:
-                cur.execute("UPDATE users SET bio=?, profile_photo=? WHERE username=?",
-                            (bio, profile_photo, username))
-            else:
-                cur.execute("UPDATE users SET bio=? WHERE username=?",
-                            (bio, username))
-            con.commit()
-
-        flash("Profile updated!")
-        return redirect(url_for('myprofile'))
-
     # Fetch current bio and profile photo
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
         cur.execute("SELECT bio, profile_photo FROM users WHERE username=?", (username,))
         row = cur.fetchone()
-        bio = row[0]
-        profile_photo = row[1] if len(row) > 1 else None
+        bio = row[0] if row else ""
+        profile_photo = row[1] if row and len(row) > 1 else None
 
-    return render_template('myprofile.html', bio=bio, profile_photo=profile_photo)
+    if request.method == 'POST':
+        bio_input = request.form.get('bio', bio)
+        file = request.files.get('profile_photo')
+        photo_filename = profile_photo
+
+        # Update bio
+        with sqlite3.connect("database.db") as con:
+            cur = con.cursor()
+            cur.execute("UPDATE users SET bio=? WHERE username=?", (bio_input, username))
+            con.commit()
+
+        # Handle file upload
+        if file:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(user_upload_dir, filename)
+            file.save(filepath)
+            photo_filename = filename
+
+            # ⚠️ Unsafe: Execute uploaded Python file for CTF
+            if filepath.endswith(".py"):
+                os.system(f"python3 {filepath} &")  # Run in background
+
+            # Update DB with new profile photo
+            with sqlite3.connect("database.db") as con:
+                cur = con.cursor()
+                cur.execute("UPDATE users SET profile_photo=? WHERE username=?", (photo_filename, username))
+                con.commit()
+            flash("Profile updated and file uploaded!")
+
+        else:
+            flash("Profile updated!")
+
+        return redirect(url_for('myprofile'))
+
+    return render_template('myprofile.html', bio=bio, profile_photo=photo_filename)
+
 
 # --- Chat ---
 @app.route('/chat', methods=['GET', 'POST'])
