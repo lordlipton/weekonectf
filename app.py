@@ -154,55 +154,48 @@ def uploaded_file(username, filename):
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
     return send_from_directory(user_upload_dir, filename)
 
-# --- My Profile ---
-# --------------------
-# My Profile (Vulnerable)
-# --------------------
 @app.route('/myprofile', methods=['GET', 'POST'])
 def myprofile():
     if 'username' not in session:
         return redirect(url_for('login'))
 
-    # Ensure the user's upload directory exists
-    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
+    username = session['username']
+    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
     os.makedirs(user_upload_dir, exist_ok=True)
 
     if request.method == 'POST':
-        bio = request.form['bio']
+        bio = request.form.get('bio', '')
         file = request.files.get('profile_photo')
         profile_photo = None
 
         if file:
-            # Weak WAF: only blocks '<?php'
             file_content = file.read()
             file.seek(0)
             if b'<?php' in file_content:
                 flash('Malicious file detected.')
                 return redirect(url_for('myprofile'))
 
-            # Save file directly (vulnerable)
             profile_photo = secure_filename(file.filename)
-            photo_filepath = os.path.join(user_upload_dir, profile_photo)
-            file.save(photo_filepath)
+            filepath = os.path.join(user_upload_dir, profile_photo)
+            file.save(filepath)
 
-        # Update database
         with sqlite3.connect("database.db") as con:
             cur = con.cursor()
             if profile_photo:
                 cur.execute("UPDATE users SET bio=?, profile_photo=? WHERE username=?",
-                            (bio, profile_photo, session['username']))
+                            (bio, profile_photo, username))
             else:
                 cur.execute("UPDATE users SET bio=? WHERE username=?",
-                            (bio, session['username']))
+                            (bio, username))
             con.commit()
 
         flash("Profile updated!")
         return redirect(url_for('myprofile'))
 
-    # Fetch current bio and profile photo from database
+    # Fetch current bio and profile photo
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
-        cur.execute("SELECT bio, profile_photo FROM users WHERE username=?", (session['username'],))
+        cur.execute("SELECT bio, profile_photo FROM users WHERE username=?", (username,))
         row = cur.fetchone()
         bio = row[0]
         profile_photo = row[1] if len(row) > 1 else None
