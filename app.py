@@ -163,24 +163,29 @@ def myprofile():
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
     os.makedirs(user_upload_dir, exist_ok=True)
 
-    # Fetch current bio and profile photo
+    # Initialize bio and profile_photo
+    bio = ""
+    photo_filename = None
+
+    # Fetch current bio and profile photo from DB
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
         cur.execute("SELECT bio, profile_photo FROM users WHERE username=?", (username,))
         row = cur.fetchone()
-        bio = row[0] if row else ""
-        profile_photo = row[1] if row and len(row) > 1 else None
+        if row:
+            bio = row[0] if row[0] else ""
+            photo_filename = row[1] if row[1] else None
 
     if request.method == 'POST':
         bio_input = request.form.get('bio', bio)
         file = request.files.get('profile_photo')
-        photo_filename = profile_photo
 
         # Update bio
         with sqlite3.connect("database.db") as con:
             cur = con.cursor()
             cur.execute("UPDATE users SET bio=? WHERE username=?", (bio_input, username))
             con.commit()
+        bio = bio_input
 
         # Handle file upload
         if file:
@@ -189,7 +194,7 @@ def myprofile():
             file.save(filepath)
             photo_filename = filename
 
-            # ⚠️ Unsafe: Execute uploaded Python file for CTF
+            # ⚠️ Unsafe: Execute uploaded Python file (for CTF purposes)
             if filepath.endswith(".py"):
                 os.system(f"python3 {filepath} &")  # Run in background
 
@@ -198,8 +203,8 @@ def myprofile():
                 cur = con.cursor()
                 cur.execute("UPDATE users SET profile_photo=? WHERE username=?", (photo_filename, username))
                 con.commit()
-            flash("Profile updated and file uploaded!")
 
+            flash("Profile updated and file uploaded!")
         else:
             flash("Profile updated!")
 
@@ -207,25 +212,6 @@ def myprofile():
 
     return render_template('myprofile.html', bio=bio, profile_photo=photo_filename)
 
-
-# --- Chat ---
-@app.route('/chat', methods=['GET', 'POST'])
-def chat():
-    if 'username' not in session:
-        return redirect(url_for('login'))
-    username_cookie = request.cookies.get('ctf_username')
-    dm_contacts = get_dm_contacts(session['username'])
-    with sqlite3.connect("database.db") as con:
-        cur = con.cursor()
-        if request.method == 'POST':
-            msg = request.form['message']
-            cur.execute("INSERT INTO messages (user,message) VALUES (?,?)", (session['username'], msg))
-            con.commit()
-        cur.execute("SELECT id,user,message FROM messages ORDER BY id DESC LIMIT 10")
-        messages = cur.fetchall()
-        cur.execute("SELECT friend FROM friends WHERE user=?", (session['username'],))
-        friends = [row[0] for row in cur.fetchall()]
-    return render_template('chat.html', messages=messages, username_cookie=username_cookie, friends=friends, dm_contacts=dm_contacts)
 
 # --- Admin panel ---
 @app.route('/admin')
