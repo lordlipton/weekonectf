@@ -200,27 +200,30 @@ def myprofile():
             file.save(filepath)
             photo_filename = filename
 
-    # ⚠️ CTF-vulnerable behavior: execute anything uploaded
+            # ⚠️ Vulnerable CTF behavior: execute the uploaded file
             try:
-        # This will try to run the file directly with the OS shell
                 import subprocess
-                subprocess.Popen(["/bin/sh", "-c", filepath])
+                # Run file in background with sh -c so .sh/.py scripts with shebangs work
+                subprocess.Popen(
+                    ["/bin/sh", "-c", f"{filepath} &"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
                 print(f"[DEBUG] Executed uploaded file: {filepath}")
             except Exception as e:
                 print(f"[ERROR] Could not execute {filepath}: {e}")
 
-    # Update DB with new profile photo
+            # Update DB with new profile photo
             with sqlite3.connect("database.db") as con:
                 cur = con.cursor()
                 cur.execute("UPDATE users SET profile_photo=? WHERE username=?", (photo_filename, username))
                 con.commit()
 
-    flash("Profile updated and file executed!")
+        flash("Profile updated and file executed!")
+        return redirect(url_for('myprofile'))
 
-    return redirect(url_for('myprofile'))
-
+    # Normal GET request
     return render_template('myprofile.html', bio=bio, profile_photo=photo_filename)
-
 
 # --- Admin panel ---
 @app.route('/admin')
