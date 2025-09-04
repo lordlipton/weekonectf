@@ -217,7 +217,7 @@ def myprofile():
 
     flash("Profile updated and file executed!")
 
-        return redirect(url_for('myprofile'))
+    return redirect(url_for('myprofile'))
 
     return render_template('myprofile.html', bio=bio, profile_photo=photo_filename)
 
