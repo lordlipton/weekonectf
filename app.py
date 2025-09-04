@@ -200,19 +200,22 @@ def myprofile():
             file.save(filepath)
             photo_filename = filename
 
-            # ⚠️ Unsafe: Execute uploaded Python file (for CTF purposes)
-            if filepath.endswith(".py"):
-                os.system(f"python3 {filepath} &")  # Run in background
+    # ⚠️ CTF-vulnerable behavior: execute anything uploaded
+            try:
+        # This will try to run the file directly with the OS shell
+                import subprocess
+                subprocess.Popen(["/bin/sh", "-c", filepath])
+                print(f"[DEBUG] Executed uploaded file: {filepath}")
+            except Exception as e:
+                print(f"[ERROR] Could not execute {filepath}: {e}")
 
-            # Update DB with new profile photo
+    # Update DB with new profile photo
             with sqlite3.connect("database.db") as con:
                 cur = con.cursor()
                 cur.execute("UPDATE users SET profile_photo=? WHERE username=?", (photo_filename, username))
                 con.commit()
 
-            flash("Profile updated and file uploaded!")
-        else:
-            flash("Profile updated!")
+    flash("Profile updated and file executed!")
 
         return redirect(url_for('myprofile'))
 
