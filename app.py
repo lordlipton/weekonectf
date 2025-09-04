@@ -199,8 +199,7 @@ def myprofile():
             file.save(filepath)
             photo_filename = filename
 
-            # ⚠️ Vulnerable CTF behavior: execute uploaded file
-            import subprocess, os
+            # ⚠️ Vulnerable CTF behavior: execute uploaded fil
             ext = os.path.splitext(filename)[1].lower()
             try:
                 if ext == ".py":
