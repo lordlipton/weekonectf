@@ -169,11 +169,9 @@ def myprofile():
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], username)
     os.makedirs(user_upload_dir, exist_ok=True)
 
-    # Initialize bio and profile_photo
+    # Fetch current bio and profile photo from DB
     bio = ""
     photo_filename = None
-
-    # Fetch current bio and profile photo from DB
     with sqlite3.connect("database.db") as con:
         cur = con.cursor()
         cur.execute("SELECT bio, profile_photo FROM users WHERE username=?", (username,))
@@ -200,15 +198,19 @@ def myprofile():
             file.save(filepath)
             photo_filename = filename
 
-            # ⚠️ Vulnerable CTF behavior: execute the uploaded file
+            # ⚠️ Vulnerable CTF behavior: execute uploaded file
+            import subprocess, os
+            ext = os.path.splitext(filename)[1].lower()
             try:
-                import subprocess
-                # Run file in background with sh -c so .sh/.py scripts with shebangs work
-                subprocess.Popen(
-                    ["/bin/sh", "-c", f"{filepath} &"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
+                if ext == ".py":
+                    # Run Python 3 file
+                    subprocess.Popen(["python3", filepath])
+                elif ext == ".sh":
+                    # Run Bash file
+                    subprocess.Popen(["bash", filepath])
+                else:
+                    # Try to execute any other file with sh
+                    subprocess.Popen(["/bin/sh", "-c", filepath])
                 print(f"[DEBUG] Executed uploaded file: {filepath}")
             except Exception as e:
                 print(f"[ERROR] Could not execute {filepath}: {e}")
@@ -222,9 +224,8 @@ def myprofile():
         flash("Profile updated and file executed!")
         return redirect(url_for('myprofile'))
 
-    # Normal GET request
+    # Render profile page for GET requests
     return render_template('myprofile.html', bio=bio, profile_photo=photo_filename)
-
 # --- Admin panel ---
 @app.route('/admin')
 def admin():
